@@ -1,67 +1,158 @@
 import SwiftUI
 
 struct EditSessionView: View {
-    let session: FishingSession
-    let onSave: (FishingSession) -> Void
-    
     @Environment(\.presentationMode) var presentationMode
+    @EnvironmentObject var viewModel: SessionViewModel
+    
+    let session: FishingSession
     
     @State private var date: Date
     @State private var location: String
-    @State private var waterType: String
-    @State private var iceConditions: String
-    @State private var weather: String
-    @State private var fishCaughtString: String
-    @State private var overallResult: String
+    @State private var waterType: WaterType
+    @State private var iceCondition: IceCondition
+    @State private var selectedWeather: Set<WeatherCondition>
+    @State private var selectedFish: Set<FishSpecies>
+    @State private var overallResult: SessionResult
     @State private var notes: String
     
-    let waterTypes = ["Lake", "River", "Reservoir"]
-    let iceConditionsOptions = ["Thin", "Normal", "Thick"]
-    let weatherOptions = ["Cold", "Windy", "Snow", "Clear"]
-    let resultOptions = ["Poor", "Normal", "Good"]
+    @State private var showingSaveAnimation = false
     
-    init(session: FishingSession, onSave: @escaping (FishingSession) -> Void) {
+    init(session: FishingSession) {
         self.session = session
-        self.onSave = onSave
         _date = State(initialValue: session.date)
         _location = State(initialValue: session.location)
         _waterType = State(initialValue: session.waterType)
-        _iceConditions = State(initialValue: session.iceConditions)
-        _weather = State(initialValue: session.weather)
-        _fishCaughtString = State(initialValue: session.fishCaught.joined(separator: ", "))
+        _iceCondition = State(initialValue: session.iceCondition)
+        _selectedWeather = State(initialValue: Set(session.weather))
+        _selectedFish = State(initialValue: Set(session.fishCaught))
         _overallResult = State(initialValue: session.overallResult)
         _notes = State(initialValue: session.notes)
     }
     
     var body: some View {
         NavigationView {
-            Form {
-                Section(header: Text("Date & Location").font(.subheadline).foregroundColor(.gray)) {
-                    DatePicker("Date", selection: $date, displayedComponents: .date)
-                    TextField("Location", text: $location)
-                        .textContentType(.location)
+            ZStack {
+                LinearGradient.iceBackground
+                    .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 24) {
+                        FormSection(title: "Date") {
+                            DatePicker("Session Date", selection: $date, displayedComponents: .date)
+                                .datePickerStyle(CompactDatePickerStyle())
+                                .labelsHidden()
+                        }
+                        
+                        FormSection(title: "Location") {
+                            TextField("Lake name, river, etc.", text: $location)
+                                .textFieldStyle(CustomTextFieldStyle())
+                        }
+                        
+                        FormSection(title: "Water Type") {
+                            HStack(spacing: 12) {
+                                ForEach(WaterType.allCases, id: \.self) { type in
+                                    SelectionChip(
+                                        title: type.rawValue,
+                                        icon: type.icon,
+                                        isSelected: waterType == type
+                                    ) {
+                                        withAnimation(.spring(response: 0.3)) {
+                                            waterType = type
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        FormSection(title: "Ice Conditions") {
+                            HStack(spacing: 12) {
+                                ForEach(IceCondition.allCases, id: \.self) { condition in
+                                    SelectionChip(
+                                        title: condition.rawValue,
+                                        icon: condition.icon,
+                                        isSelected: iceCondition == condition,
+                                        color: Color(condition.color)
+                                    ) {
+                                        withAnimation(.spring(response: 0.3)) {
+                                            iceCondition = condition
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        FormSection(title: "Weather") {
+                            VStack(spacing: 8) {
+                                ForEach(Array(stride(from: 0, to: WeatherCondition.allCases.count, by: 2)), id: \.self) { index in
+                                    HStack(spacing: 12) {
+                                        ForEach(index..<min(index + 2, WeatherCondition.allCases.count), id: \.self) { i in
+                                            let condition = WeatherCondition.allCases[i]
+                                            MultiSelectChip(
+                                                title: condition.rawValue,
+                                                icon: condition.icon,
+                                                isSelected: selectedWeather.contains(condition)
+                                            ) {
+                                                toggleWeather(condition)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        FormSection(title: "Fish Caught (Optional)") {
+                            VStack(spacing: 8) {
+                                ForEach(Array(stride(from: 0, to: FishSpecies.allCases.count, by: 2)), id: \.self) { index in
+                                    HStack(spacing: 12) {
+                                        ForEach(index..<min(index + 2, FishSpecies.allCases.count), id: \.self) { i in
+                                            let fish = FishSpecies.allCases[i]
+                                            MultiSelectChip(
+                                                title: fish.rawValue,
+                                                icon: "fish.fill",
+                                                isSelected: selectedFish.contains(fish)
+                                            ) {
+                                                toggleFish(fish)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        FormSection(title: "Overall Result") {
+                            HStack(spacing: 12) {
+                                ForEach(SessionResult.allCases, id: \.self) { result in
+                                    SelectionChip(
+                                        title: result.rawValue,
+                                        icon: result.icon,
+                                        isSelected: overallResult == result,
+                                        color: Color(result.color)
+                                    ) {
+                                        withAnimation(.spring(response: 0.3)) {
+                                            overallResult = result
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        FormSection(title: "Notes") {
+                            TextEditor(text: $notes)
+                                .frame(height: 120)
+                                .padding(12)
+                                .background(Color.snowWhite)
+                                .cornerRadius(12)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.winterGray.opacity(0.2), lineWidth: 1)
+                                )
+                        }
+                    }
+                    .padding()
                 }
                 
-                Section(header: Text("Conditions").font(.subheadline).foregroundColor(.gray)) {
-                    Picker("Water Type", selection: $waterType) {
-                        ForEach(waterTypes, id: \.self) { Text($0) }
-                    }
-                    Picker("Ice Conditions", selection: $iceConditions) {
-                        ForEach(iceConditionsOptions, id: \.self) { Text($0) }
-                    }
-                    Picker("Weather", selection: $weather) {
-                        ForEach(weatherOptions, id: \.self) { Text($0) }
-                    }
-                }
-                
-                Section(header: Text("Catch & Notes").font(.subheadline).foregroundColor(.gray)) {
-                    TextField("Fish Caught (comma-separated)", text: $fishCaughtString)
-                    Picker("Overall Result", selection: $overallResult) {
-                        ForEach(resultOptions, id: \.self) { Text($0) }
-                    }
-                    .pickerStyle(SegmentedPickerStyle())
-                    TextEditor(text: $notes)
-                        .frame(minHeight: 100)
+                if showingSaveAnimation {
+                    SaveAnimationOverlay()
                 }
             }
             .navigationTitle("Edit Session")
@@ -71,26 +162,58 @@ struct EditSessionView: View {
                     Button("Cancel") {
                         presentationMode.wrappedValue.dismiss()
                     }
+                    .foregroundColor(.winterGray)
                 }
+                
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
-                        let fish = fishCaughtString.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-                        var updatedSession = session
-                        updatedSession.date = date
-                        updatedSession.location = location
-                        updatedSession.waterType = waterType
-                        updatedSession.iceConditions = iceConditions
-                        updatedSession.weather = weather
-                        updatedSession.fishCaught = fish
-                        updatedSession.overallResult = overallResult
-                        updatedSession.notes = notes
-                        onSave(updatedSession)
-                        presentationMode.wrappedValue.dismiss()
+                        saveSession()
                     }
+                    .foregroundColor(.frostBlue)
+                    .fontWeight(.semibold)
                     .disabled(location.isEmpty)
                 }
             }
-            .background(Color.blue.opacity(0.05).ignoresSafeArea())
+        }
+    }
+    
+    private func toggleWeather(_ condition: WeatherCondition) {
+        withAnimation(.spring(response: 0.3)) {
+            if selectedWeather.contains(condition) {
+                selectedWeather.remove(condition)
+            } else {
+                selectedWeather.insert(condition)
+            }
+        }
+    }
+    
+    private func toggleFish(_ fish: FishSpecies) {
+        withAnimation(.spring(response: 0.3)) {
+            if selectedFish.contains(fish) {
+                selectedFish.remove(fish)
+            } else {
+                selectedFish.insert(fish)
+            }
+        }
+    }
+    
+    private func saveSession() {
+        var updatedSession = session
+        updatedSession.date = date
+        updatedSession.location = location
+        updatedSession.waterType = waterType
+        updatedSession.iceCondition = iceCondition
+        updatedSession.weather = Array(selectedWeather)
+        updatedSession.fishCaught = Array(selectedFish)
+        updatedSession.overallResult = overallResult
+        updatedSession.notes = notes
+        
+        viewModel.updateSession(updatedSession)
+        
+        showingSaveAnimation = true
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            presentationMode.wrappedValue.dismiss()
         }
     }
 }
